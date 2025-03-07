@@ -1,0 +1,34 @@
+[project]
+authors = ["notPlancha <31565873+notPlancha@users.noreply.github.com>"]
+channels = ["conda-forge"]
+name = "exoplanets"
+platforms = ["win-64"]
+version = "0.1.0"
+
+[tasks]
+add_r_kernel = "r -e 'IRkernel::installspec()'"
+start_server = "jupyter server"
+
+[activation.env]
+
+
+[dependencies]
+python = ">=3.13.2,<3.14"
+jupyter = ">=1.1.1,<2"
+numpy = ">=2.2.3,<3"
+pandas = ">=2.2.3,<3"
+scikit-learn = ">=1.6.1,<2"
+kaggle = ">=1.6.17,<2"
+r = ">=4.4,<4.5"
+r-irkernel = ">=1.3.2,<2"
+r-tidyverse = ">=2.0.0,<3"
+r-here = ">=1.0.1,<2"
+r-easystats = ">=0.7.4,<0.8"
+r-skimr = ">=2.1.5,<3"
+r-janitor = ">=2.2.1,<3"
+r-pacman = ">=0.5.1,<0.6"
+r-naniar = ">=1.1.0,<2"
+r-visdat = ">=0.6.0,<0.7"
+
+[pypi-dependencies]
+kagglehub = ">=0.3.10, <0.4"
