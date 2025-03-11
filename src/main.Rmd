@@ -56,7 +56,45 @@ exoplanets %>%
   data.table::transpose(keep.names="column") -> preview
 
 preview
-# preview %>% View()
+preview %>% View()
 
+```
+
+We have a lot of features:
+- Planet name
+- Mass (M jup)
+- Mass*sin(i) (M jup)
+  - This describes minimum mass of the planet due to inclination effect
+
+```{r}
+exoplanets %>% 
+  filter(name %>% str_like("%TOI-784%"))
+```
+
+
+```{r}
+conflicts_prefer(dplyr::filter)
+exoplanets %>% 
+  filter(discovered == 2023)
+```
+
+
+
+```{r}
+# remove any column with error in the name
+exoplanets %>% 
+  select(-contains("error")) %>% 
+  select(-planet_status, -updated)
+
+```
+
+
+```{r}
+exoplanets %>% 
+  tabyl("detection_type")
+```
+
+```{r}
+exoplanets
 ```
 
