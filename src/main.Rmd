@@ -43,12 +43,20 @@ names(exoplanets)
 ```{r}
 library(janitor)
 exoplanets %>% tabyl(planet_status)
+```
 
-options(repr.matrix.max.rows=100)
+
+```{r}
+library(data.table)
+# options(repr.matrix.max.rows=100)
 exoplanets %>% 
   add_prop_miss() %>%
   arrange(prop_miss_all) %>% 
-  head(10) %>% 
-  t()
+  head(5) %>% 
+  data.table::transpose(keep.names="column") -> preview
+
+preview
+# preview %>% View()
+
 ```
 
