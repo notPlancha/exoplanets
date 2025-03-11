@@ -1,0 +1,11 @@
+Package: app
+Imports:
+    easystats,
+    here,
+    janitor,
+    jetpack,
+    naniar,
+    rmarkdown,
+    skimr,
+    tidyverse,
+    visdat
