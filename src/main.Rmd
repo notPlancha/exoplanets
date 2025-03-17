@@ -16,21 +16,18 @@ exoplanets
 
 ```{r}
 library(skimr)
-
 skim(exoplanets)
 ```
 
 
-```{r}
+```{r,fig.asp=2}
 library(naniar)
-# options(repr.plot.width = 10, repr.plot.height = 20)
 gg_miss_var(exoplanets)
 ```
 
 
-```{r}
+```{r, fig.width=20, fig.height=10}
 library(visdat)
-# options(repr.plot.width = 20, repr.plot.height = 10)
 vis_dat(exoplanets)
 ```
 
@@ -56,8 +53,7 @@ exoplanets %>%
   data.table::transpose(keep.names="column") -> preview
 
 preview
-preview %>% View()
-
+# preview %>% View()
 ```
 
 We have a lot of features:
@@ -65,8 +61,20 @@ We have a lot of features:
 - Mass (M jup)
 - Mass*sin(i) (M jup)
   - This describes minimum mass of the planet due to inclination effect
+- Radius (Rjup)
+- Period (day)
+- a / the average distance of the planet and its star
+  - it's in AU (astronomical units), which is the standard distance used for these types of things
+  - 1 AU is the average distance tween the earth and the sun
+- e / eccentry of a planet (between 0 and 1)
+  - represenets how much of a circle is the orbit
+  - e = 0 means perfect circle, e > 1 means its not bound to the star
+- Discovery - year when it was discovered
+- update - year it was updated
+- 
 
 ```{r}
+conflicts_prefer(dplyr::filter)
 exoplanets %>% 
   filter(name %>% str_like("%TOI-784%"))
 ```
@@ -78,14 +86,455 @@ exoplanets %>%
   filter(discovered == 2023)
 ```
 
+```{r}
+exoplanets %>%
+  mutate(
+    ra_rad = ra,  # Convert RA to radians
+    dec_rad = dec  # Convert Dec to radians
+  ) %>% 
+  ggplot(aes(x = ra_rad, y = dec_rad, color = dec)) +
+  geom_point(size = 0.4) +
+  coord_map("aitoff") +  # Apply Aitoff projection
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"  # Optionally remove legend
+  )
+```
+
+
+```{r}
+library(dplyr)
+library(plotly)
+
+# Create a new column to distinguish Kepler exoplanets
+exoplanets_3d <- exoplanets %>%
+  mutate(
+    ra_rad = ra * pi / 180,   # Convert RA from degrees to radians
+    dec_rad = dec * pi / 180, # Convert Dec from degrees to radians
+    x = cos(dec_rad) * cos(ra_rad), # Convert to Cartesian coordinates
+    y = cos(dec_rad) * sin(ra_rad),
+    z = sin(dec_rad),
+    kepler_highlight = ifelse(grepl("Kepler", name), "Kepler", "Other"), # Highlight Kepler exoplanets
+    hover_text = paste("Name: ", name) # Create custom hover text with the name of the exoplanet
+  )
+
+# Create an interactive 3D scatter plot with plotly
+plot_ly(
+  data = exoplanets_3d,
+  x = ~x,
+  y = ~y,
+  z = ~z,
+  color = ~kepler_highlight,  # Use the kepler_highlight column for color mapping
+  colors = c("Other" = "red", "Kepler" = "blue"), # Color Kepler exoplanets blue, others gray
+  text = ~hover_text, # Show the name of the exoplanet on hover
+  type = "scatter3d",
+  mode = "markers",
+  marker = list(size = 0.5)
+) %>%
+  layout(
+    title = "3D Sky Map of Exoplanets (Kepler Highlighted)",
+    scene = list(
+      xaxis = list(title = "X"),
+      yaxis = list(title = "Y"),
+      zaxis = list(title = "Z")
+    )
+  )
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Use dplyr to prepare the data
+exoplanets %>%
+  mutate(
+    x = angular_distance * cos(inclination * pi / 180),  # Convert to Cartesian coordinates
+    y = angular_distance * sin(inclination * pi / 180)
+  ) %>% 
+  ggplot(aes(x = x, y = y)) +
+  geom_point(size = 3, alpha = 0.7, color = "blue") +  # Exoplanets
+  geom_point(aes(x = 0, y = 0), color = "red", size = 5) +  # Host star
+  labs(
+    x = "Relative X Position (arcseconds)",
+    y = "Relative Y Position (arcseconds)",
+    title = "Exoplanet Positions in the Sky"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+
+```{r}
+
+# Assuming your data is loaded as 'exoplanets'
+# Convert RA to degrees (if it's in hours:minutes:seconds format)
+# If RA is already in degrees, skip this step
+exoplanets %>%
+  mutate(
+    ra_deg = ra,  # Convert RA from hours to degrees (if needed)
+    # Convert to polar coordinates for plotting
+    # RA is mapped to theta (0-360 degrees)
+    theta = ra_deg
+  ) %>% 
+ggplot(aes(x = theta, y = star_distance, color = mass)) +
+  # Use coord_polar for circular plot
+  coord_polar(start = 0, direction = -1) + # Start at 0 degrees, clockwise direction
+  # Add concentric circles for distance reference
+  geom_hline(yintercept = c(10, 100, 1000, 10000), 
+             color = "gray", linetype = "solid", size = 0.3, alpha = 0.7) +
+  # Add radial lines for angle reference
+  geom_vline(xintercept = seq(0, 330, by = 30), 
+             color = "gray", linetype = "solid", size = 0.3, alpha = 0.7) +
+  # Plot the exoplanets
+  geom_point(alpha = 0.8, size = 1) +
+  # Use log scale for distance
+  scale_y_log10(
+    breaks = c(10, 100, 1000, 10000),
+    labels = c("10 pc", "100 pc", "1000 pc", "10000 pc"),
+    limits = c(1, 15000)
+  ) +
+  # Use log scale for mass colors
+  scale_color_gradientn(
+    colors = c("#1E90FF", "#32CD32", "#FFFF00", "#FFA500", "#FF4500", "#FF0000"),
+    trans = "log10",
+    breaks = c(0.0001, 0.001, 0.01, 0.1, 1, 10),
+    labels = c("10⁻⁴", "10⁻³", "10⁻²", "10⁻¹", "10⁰", "10¹"),
+    name = "Planetary Mass (MJup)"
+  ) +
+  # Remove grid and axis elements
+  theme_minimal() +
+  theme(
+    axis.title = element_blank(),
+    axis.text.y = element_blank(),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  ggtitle("Exoplanet Distribution")
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Assuming exoplanets is your dataframe
+# First, let's prepare the data
+# We need to convert RA and Dec to proper coordinates for plotting
+
+exoplanets_plot <- exoplanets %>%
+  # Convert RA to proper format if needed
+  # If RA is in hours (0-24), convert to degrees (0-360)
+  mutate(
+    ra_deg = ra * 15,  # Assuming ra is in hours; if already in degrees, remove this line
+    
+    # For this type of projection, we need to map RA and Dec to x and y coordinates
+    # This is a simple equatorial projection
+    x = cos(dec * pi/180) * sin(ra_deg * pi/180),
+    y = sin(dec * pi/180)
+  )
+
+# Create the plot
+celestial_plot <- ggplot(exoplanets_plot, aes(x = x, y = y)) +
+  # Add a circular boundary representing the celestial sphere
+  annotate("path", 
+           x = cos(seq(0, 2*pi, length.out = 100)), 
+           y = sin(seq(0, 2*pi, length.out = 100)),
+           color = "gray", size = 0.5) +
+  
+  # Add grid lines for declination
+  lapply(c(-60, -30, 0, 30, 60), function(dec) {
+    # For each declination, calculate the circle
+    r <- cos(dec * pi/180)  # Radius of the circle
+    
+    # Only draw the part of the circle that's visible
+    geom_path(data = data.frame(
+      x = r * cos(seq(0, 2*pi, length.out = 100)),
+      y = sin(dec * pi/180) * rep(1, 100)
+    ), aes(x = x, y = y), color = "gray", size = 0.3, inherit.aes = FALSE)
+  }) +
+  
+  # Add grid lines for right ascension
+  lapply(seq(0, 330, by = 30), function(ra) {
+    # Convert RA to radians
+    ra_rad <- ra * pi/180
+    
+    # Draw line from center to edge
+    geom_path(data = data.frame(
+      x = cos(seq(-pi/2, pi/2, length.out = 100)) * sin(ra_rad),
+      y = sin(seq(-pi/2, pi/2, length.out = 100))
+    ), aes(x = x, y = y), color = "gray", size = 0.3, inherit.aes = FALSE)
+  }) +
+  
+  # Add labels for declination
+  lapply(c(-60, -30, 0, 30, 60, 90), function(dec) {
+    r <- cos(dec * pi/180)
+    if (dec != 90) {  # No need to label the pole
+      annotate("text", x = 0, y = sin(dec * pi/180), 
+               label = paste0(dec), color = "black", size = 3)
+    }
+  }) +
+  
+  # Add labels for right ascension
+  lapply(seq(0, 330, by = 30), function(ra) {
+    ra_rad <- ra * pi/180
+    x_edge <- sin(ra_rad)
+    y_edge <- 0
+    
+    annotate("text", x = 1.05 * x_edge, y = 1.05 * y_edge, 
+             label = paste0(ra, "deg"), color = "black", size = 3)
+  }) +
+  
+  # Add the exoplanet points
+  geom_point(color = "red", size = 1, alpha = 0.8) +
+  
+  # Set aspect ratio to 1 for a circular plot
+  coord_fixed() +
+  
+  # Remove axis labels and ticks
+  theme_void() +
+  
+  # Add a title if needed
+  ggtitle("Exoplanet Distribution - Celestial Sphere Projection")
+
+celestial_plot
+```
+
+```{r}
+# Load necessary libraries
+library(rgl)
+library(dplyr)
+library(stringr)
+
+# Prepare the data
+# We need to convert RA and Dec to 3D Cartesian coordinates
+exoplanets_3d <- exoplanets %>%
+  mutate(
+    # Convert RA to degrees if needed (assuming ra is in hours)
+    ra_deg = ra * 15,  # If already in degrees, skip this
+    
+    # Convert to radians for the calculations
+    ra_rad = ra_deg * pi/180,
+    dec_rad = dec * pi/180,
+    
+    # Convert to 3D Cartesian coordinates (unit sphere)
+    # Standard spherical to Cartesian conversion
+    x = cos(dec_rad) * cos(ra_rad),
+    y = cos(dec_rad) * sin(ra_rad),
+    z = sin(dec_rad),
+    
+    # Identify Kepler planets
+    # This checks if the name contains "Kepler" or "KOI"
+    is_kepler = str_detect(name, regex("kepler|koi", ignore_case = TRUE))
+  )
+
+# Start a new 3D plot
+open3d()
+
+# Set the background to black for a space feel
+bg3d(color = "black")
+
+# Add a semi-transparent celestial sphere for reference
+spheres3d(0, 0, 0, radius = 1, col = "gray", alpha = 0.1)
+
+# Add grid lines for declination
+for (dec in seq(-60, 60, by = 30)) {
+  dec_rad <- dec * pi/180
+  radius <- cos(dec_rad)
+  
+  # Create a circle at this declination
+  theta <- seq(0, 2*pi, length.out = 100)
+  x <- radius * cos(theta)
+  y <- radius * sin(theta)
+  z <- rep(sin(dec_rad), 100)
+  
+  lines3d(x, y, z, color = "gray", alpha = 0.5)
+  
+  # Add text label for this declination
+  text3d(0, 0, sin(dec_rad), texts = paste0(dec, "deg"), color = "white", adj = c(1.1, 0.5))
+}
+
+# Add grid lines for right ascension
+for (ra in seq(0, 330, by = 30)) {
+  ra_rad <- ra * pi/180
+  
+  # Create a line from south pole to north pole
+  dec_range <- seq(-pi/2, pi/2, length.out = 100)
+  x <- cos(dec_range) * cos(ra_rad)
+  y <- cos(dec_range) * sin(ra_rad)
+  z <- sin(dec_range)
+  
+  lines3d(x, y, z, color = "gray", alpha = 0.5)
+  
+  # Add text label for this RA
+  text3d(1.1 * cos(0) * cos(ra_rad), 
+         1.1 * cos(0) * sin(ra_rad), 
+         0, 
+         texts = paste0(ra, "deg"), 
+         color = "white")
+}
+
+# Filter out any rows with NA values
+valid_planets <- exoplanets_3d %>%
+  filter(!is.na(x) & !is.na(y) & !is.na(z))
+
+# Split into Kepler and non-Kepler planets
+kepler_planets <- valid_planets %>% filter(is_kepler)
+other_planets <- valid_planets %>% filter(!is_kepler)
+
+# Plot non-Kepler exoplanets
+points3d(other_planets$x, other_planets$y, other_planets$z, 
+         color = "red", size = 3, alpha = 0.8)
+
+# Plot Kepler exoplanets with a special color
+points3d(kepler_planets$x, kepler_planets$y, kepler_planets$z, 
+         color = "cyan", size = 3, alpha = 0.8)
+
+# Set initial viewpoint
+view3d(theta = 20, phi = 20, zoom = 0.8)
+
+# Add title
+title3d("3D Exoplanet Distribution - Celestial Sphere", color = "white", line = 2)
+
+# Add a legend
+legend_x <- rep(1.5, 2)
+legend_y <- c(0.2, -0.2)
+legend_z <- rep(0, 2)
+legend_colors <- c("red", "cyan")
+
+# Add legend points
+points3d(legend_x, legend_y, legend_z, size = 5, color = legend_colors)
+
+# Add text labels
+text3d(legend_x[1] + 0.1, legend_y[1], legend_z[1], 
+       texts = "Other Planets", 
+       color = "white", adj = 0)
+text3d(legend_x[2] + 0.1, legend_y[2], legend_z[2], 
+       texts = "Kepler Planets", 
+       color = "white", adj = 0)
+
+# Add interaction controls
+par3d(mouseMode = c("trackball", "zoom", "fov", "pull"))
+```
+```{r}
+# Load necessary libraries
+library(rgl)
+library(dplyr)
+library(stringr)
+
+# Prepare the data
+exoplanets_3d <- exoplanets %>%
+  mutate(
+    # Convert RA to degrees if needed
+    ra_deg = ra * 15,  # Skip if already in degrees
+    
+    # Convert to radians for calculations
+    ra_rad = ra_deg * pi/180,
+    dec_rad = dec * pi/180,
+    
+    # Standard projection from spherical to Cartesian coordinates
+    # This is what creates the view you want
+    x = ra_rad,  # Simply use RA as x
+    y = dec_rad, # Simply use Dec as y
+    z = 0,       # All on same plane for 2D projection
+    
+    # Identify Kepler planets
+    is_kepler = str_detect(name, regex("kepler|koi", ignore_case = TRUE))
+  )
+
+# Start a new plot
+# For this visualization, let's use a 2D plot which may be easier to work with
+# for this specific case
+open3d()
+bg3d("black")
+
+# Draw grid lines for RA in radians or degrees
+# Convert to degrees for labeling
+for (ra in seq(0, 330, by = 30)) {
+  ra_rad = ra * pi/180
+  lines3d(c(ra_rad, ra_rad), c(-pi/2, pi/2), c(0,0), color="gray", alpha=0.5)
+  text3d(ra_rad, -pi/2-0.1, 0, texts=paste0(ra, "deg"), color="white")
+}
+
+# Draw grid lines for Dec
+for (dec in seq(-60, 60, by = 30)) {
+  dec_rad = dec * pi/180
+  lines3d(c(0, 2*pi), c(dec_rad, dec_rad), c(0,0), color="gray", alpha=0.5)
+  text3d(0-0.1, dec_rad, 0, texts=paste0(dec, "deg"), color="white", adj=c(1,0.5))
+}
+
+# Filter out any rows with NA values
+valid_planets <- exoplanets_3d %>%
+  filter(!is.na(x) & !is.na(y))
+
+# Split into Kepler and non-Kepler planets
+kepler_planets <- valid_planets %>% filter(is_kepler)
+other_planets <- valid_planets %>% filter(!is_kepler)
+
+# Plot non-Kepler exoplanets
+points3d(other_planets$x, other_planets$y, other_planets$z, 
+         color = "red", size = 3, alpha = 0.8)
+
+# Plot Kepler exoplanets with a special color
+points3d(kepler_planets$x, kepler_planets$y, kepler_planets$z, 
+         color = "darkred", size = 5, alpha = 0.8)
+
+# Set an appropriate viewpoint for this projection
+view3d(theta = 0, phi = -90, zoom = 0.7, fov = 0)
+
+# Add legend
+legend_x <- c(2*pi+0.2, 2*pi+0.2)
+legend_y <- c(0.2, -0.2)
+legend_z <- c(0, 0)
+legend_colors <- c("red", "darkred")
+
+# Add legend points
+points3d(legend_x, legend_y, legend_z, size = 3, color = legend_colors)
+
+# Add text labels
+text3d(legend_x[1] + 0.1, legend_y[1], legend_z[1], 
+       texts = "Other Planets", color = "white", adj = 0)
+text3d(legend_x[2] + 0.1, legend_y[2], legend_z[2], 
+       texts = "Kepler Planets", color = "white", adj = 0)
+
+# Add title
+title3d("Exoplanet Sky Distribution", color="white", line=2)
+```
+
+
+
+```{r}
+exoplanets %>% names()
+```
+
+```{r}
+# check how many are missing
+exoplanets %>% 
+  select(ra, dec, angular_distance) %>% 
+  mutate(ra = ra %>% is.na(), dec = dec %>% is.na(), angular_distance = angular_distance %>% is.na()) %>%
+  summarise_all(mean) %>%
+  gather(key="column", value="percentage")
+```
+
+
+```{r}
+# check which ones dont have ra
+exoplanets %>% 
+  filter(ra %>% is.na())
+```
 
 
 ```{r}
 # remove any column with error in the name
-exoplanets %>% 
+exoplanets_r <- exoplanets %>% 
   select(-contains("error")) %>% 
   select(-planet_status, -updated)
-
+exoplanets_r %>% names
 ```
 
 
@@ -93,8 +542,26 @@ exoplanets %>%
 exoplanets %>% 
   tabyl("detection_type")
 ```
+## Kepler
+
+```{r}
+# filter by the kepler
+exoplanets %>% 
+  filter(name %>% str_like("%Kepler%")) %>% 
+  tabyl("detection_type")
+```
+
+```{r}
+
+```
+
+
 
 ```{r}
 exoplanets
+```
+
+```{r}
+
 ```
 
