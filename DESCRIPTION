@@ -2,6 +2,7 @@ Package: app
 Imports:
     data.table,
     easystats,
+    fastDummies,
     here,
     janitor,
     jetpack,

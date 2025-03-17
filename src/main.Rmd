@@ -113,7 +113,7 @@ exoplanets %>%
 ```{r}
 library(dplyr)
 library(plotly)
-
+conflicts_prefer(plotly::layout)
 # Create a new column to distinguish Kepler exoplanets
 exoplanets_3d <- exoplanets %>%
   mutate(
@@ -123,7 +123,7 @@ exoplanets_3d <- exoplanets %>%
     y = cos(dec_rad) * sin(ra_rad),
     z = sin(dec_rad),
     color = case_when(  # Create a column for red when kepler, blue otherwise
-      str_detect(name, regex("kepler|koi", ignore_case = TRUE)) ~ "Kepler",
+      str_detect(paste(name, alternate_names), regex("kepler|koi", ignore_case = TRUE)) ~ "Kepler",
       # if it's free floating (star_name is NA)
       star_name %>% is.na() ~ "Free Floating",
       TRUE ~ "Other"
@@ -247,7 +247,7 @@ exoplanets_3d <- exoplanets %>%
     y = cos(dec_rad) * sin(ra_rad),
     z = sin(dec_rad),
     color = case_when(  # Create a column for red when kepler, blue otherwise
-      str_detect(name, regex("kepler|koi", ignore_case = TRUE)) ~ "Kepler",
+      str_detect(paste(name, alternate_names), regex("kepler|koi", ignore_case = TRUE)) ~ "Kepler",
       # if it's free floating (star_name is NA)
       star_name %>% is.na() ~ "Free Floating",
       TRUE ~ "Other"
@@ -336,20 +336,69 @@ exoplanets %>%
   filter(ra %>% is.na())
 ```
 
+```{r}
+# check out alternate names
+exoplanets %>% 
+  select(name, alternate_names) %>% 
+  filter(alternate_names %>% str_length() > 0)
+
+```
+
+```{r}
+exoplanets %>% 
+  tabyl(publication)
+```
+
 
 ```{r}
 # remove any column with error in the name
 exoplanets_r <- exoplanets %>% 
   select(-contains("error")) %>% 
-  select(-planet_status, -updated)
+  select(-planet_status, -updated, -alternate_names, -publication) %>% # useless
+  select(-hot_point_lon, ) # too many missings
 exoplanets_r %>% names
 ```
 
+```{r, fig.width=20, fig.height=10}
+library(visdat)
+vis_dat(exoplanets_r)
+```
 
+```{r, fig.width=20, fig.height=10}
+vis_miss(exoplanets_r, sort_miss = T, cluster = T)
+```
+
+
+# detection type
 ```{r}
 exoplanets %>% 
-  tabyl("detection_type")
+  tabyl("detection_type") %>% 
+  arrange(-n)
 ```
+
+```{r}
+library(fastDummies)
+exoplanets_rd <- exoplanets_r %>% 
+  dummy_cols(select_columns = "detection_type", split = ", ") %>% 
+  # make them bools
+  mutate_at(vars(starts_with("detection_type_")), as.logical)
+exoplanets_rd %>% select(starts_with("detection_type")) %>% 
+  unique
+```
+
+```{r, fig.width=10, fig.height=20}
+library(naniar)
+exoplanets_rd %>%
+  group_by(`detection_type_Primary Transit`) %>% 
+  miss_var_summary() %>% 
+  arrange(variable) %>% 
+  filter(variable %>% str_detect("detection_type", negate = T)) %>% 
+  ggplot(aes(x = variable, y = pct_miss, fill = `detection_type_Primary Transit`)) +
+  geom_col(position="dodge") +
+  coord_flip() 
+```
+
+
 ## Kepler
 
 ```{r}
@@ -360,14 +409,11 @@ exoplanets %>%
 ```
 
 ```{r}
-
+# check other
+exoplanets %>% 
+  filter(detection_type == "Other")
 ```
 
-
-
-```{r}
-exoplanets
-```
 
 ```{r}
 
