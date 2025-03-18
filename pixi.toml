@@ -1,0 +1,12 @@
+[project]
+channels = ["conda-forge"]
+name = "exoplanets"
+platforms = ["win-64"]
+
+[tasks]
+to_notebook = "jupytext --to notebook src/main.Rmd"
+
+
+[dependencies]
+jupyter = ">=1.1.1,<2"
+jupytext = ">=1.16.7,<2"

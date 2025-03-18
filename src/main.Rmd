@@ -49,38 +49,6 @@ names(exoplanets)
 library(janitor)
 exoplanets %>% tabyl(planet_status)
 ```
-
-
-```{r}
-library(data.table)
-# options(repr.matrix.max.rows=100)
-exoplanets %>% 
-  add_prop_miss() %>%
-  arrange(prop_miss_all) %>% 
-  head(5) %>% 
-  data.table::transpose(keep.names="column") -> preview
-
-preview
-# preview %>% View()
-```
-
-We have a lot of features:
-- Planet name
-- Mass (M jup)
-- Mass*sin(i) (M jup)
-  - This describes minimum mass of the planet due to inclination effect
-- Radius (Rjup)
-- Period (day)
-- a / the average distance of the planet and its star
-  - it's in AU (astronomical units), which is the standard distance used for these types of things
-  - 1 AU is the average distance tween the earth and the sun
-- e / eccentry of a planet (between 0 and 1)
-  - represenets how much of a circle is the orbit
-  - e = 0 means perfect circle, e > 1 means its not bound to the star
-- Discovery - year when it was discovered
-- update - year it was updated
-- 
-
 ```{r}
 conflicts_prefer(dplyr::filter)
 exoplanets %>% 
@@ -108,13 +76,6 @@ exoplanets %>%
     axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "none"  # Optionally remove legend
   )
-```
-
-
-```{r}
-# check columsn that start with star
-exoplanets %>% 
-  select(starts_with("star"))
 ```
 
 
@@ -243,9 +204,12 @@ ggplot(aes(x = theta, y = star_distance, color = mass)) +
 
 
 ```{r}
-library(dplyr)
+library(shiny)
 library(plotly)
+library(dplyr)
+library(stringr)
 
+# Assuming 'exoplanets' dataset is available
 # Create a new column to distinguish Kepler exoplanets
 exoplanets_3d <- exoplanets %>%
   mutate(
@@ -281,52 +245,75 @@ steps <- list(
   list(args = list("marker.opacity", 1.0), label = "1.0", method = "restyle")
 )
 
-# Create an interactive 3D scatter plot with plotly
-fig <- plot_ly(
-  data = exoplanets_3d,
-  x = ~scaled_x,
-  y = ~scaled_y,
-  z = ~scaled_z,
-  color = ~color,  # Use the kepler_highlight column for color mapping
-  colors = c("Other" = "red", "Kepler" = "blue", "Free Floating" = "green"),
-  text = ~hover_text, # Show the name of the exoplanet on hover
-  type = "scatter3d",
-  mode = "markers",
-  marker = list(size = 2, opacity = 0.7), # Default opacity
-  showlegend = TRUE
-)
-
-# Add layout with a slider for opacity
-fig <- fig %>% layout(
-  title = "3D Sky Map of Exoplanets (Kepler Highlighted)",
-  scene = list(
-    xaxis = list(title = "X"),
-    yaxis = list(title = "Y"),
-    zaxis = list(title = "Z")
-  ),
-  sliders = list(
-    list(
-      active = 1,  # Set the default opacity value to 1.0 (fully opaque)
-      currentvalue = list(
-        prefix = "Opacity: ",
-        font = list(size = 15)
-      ),
-      pad = list(t = 60),
-      steps = steps  # Use the steps defined earlier for the opacity slider
+# Define UI for the Shiny app
+ui <- fluidPage(
+  # Application title
+  titlePanel("3D Sky Map of Exoplanets (Kepler Highlighted)"),
+  
+  # Sidebar layout (can remain empty since the slider is in Plotly)
+  sidebarLayout(
+    sidebarPanel(
+      # Empty sidebar panel (since no Shiny slider is needed)
+    ),
+    
+    mainPanel(
+      # Plotly output for displaying the plot
+      plotlyOutput("plot", height = "800px")  # Plot height set to 800px
     )
   )
 )
 
-fig
+# Define server logic for the Shiny app
+server <- function(input, output, session) {
+  
+  # Create the Plotly figure to be rendered
+  output$plot <- renderPlotly({
+    fig <- plot_ly(
+      data = exoplanets_3d,
+      x = ~scaled_x,
+      y = ~scaled_y,
+      z = ~scaled_z,
+      color = ~color,  # Use the kepler_highlight column for color mapping
+      colors = c("Other" = "red", "Kepler" = "blue", "Free Floating" = "green"),
+      text = ~hover_text, # Show the name of the exoplanet on hover
+      type = "scatter3d",
+      mode = "markers",
+      marker = list(size = 2, opacity = 0.7), # Default opacity
+      showlegend = TRUE
+    )
+    
+    # Add the opacity slider directly inside Plotly layout
+    fig <- fig %>% layout(
+      title = "3D Sky Map of Exoplanets (Kepler Highlighted)",
+      scene = list(
+        xaxis = list(title = "X"),
+        yaxis = list(title = "Y"),
+        zaxis = list(title = "Z")
+      ),
+      sliders = list(
+        list(
+          active = 1,  # Set the default opacity value to 1.0 (fully opaque)
+          currentvalue = list(
+            prefix = "Opacity: ",
+            font = list(size = 15)
+          ),
+          pad = list(t = 60),
+          steps = steps  # Use the steps defined earlier for the opacity slider
+        )
+      ),
+      height = 800  # Set the height of the plot to 800px
+    )
+    
+    fig
+  })
+}
 
-
+if (F) {
+  # Run the application
+  shinyApp(ui = ui, server = server)
+}
 ```
 
-
-
-```{r}
-exoplanets %>% names()
-```
 
 ```{r}
 # check how many are missing
@@ -362,8 +349,7 @@ exoplanets %>%
 # remove any column with error in the name
 exoplanets_r <- exoplanets %>% 
   select(-contains("error")) %>% 
-  select(-planet_status, -publication) %>% # useless
-  select(-hot_point_lon, ) # too many missings
+  select(-planet_status, -publication)
 exoplanets_r %>% names
 ```
 
@@ -375,7 +361,6 @@ vis_dat(exoplanets_r)
 ```{r, fig.width=20, fig.height=10}
 vis_miss(exoplanets_r, sort_miss = T, cluster = T)
 ```
-
 
 # detection type
 ```{r}
@@ -453,6 +438,8 @@ ui <- fluidPage(
 server <- function(input, output) {
   output$missing_plot <- renderPlotly({
     exoplanets_rd %>%
+      # transform vars into bool
+      mutate(across(starts_with("detection_type"), ~ .x %>% as.logical())) %>%
       group_by(.data[[input$group_var]]) %>%
       miss_var_summary() %>%
       arrange(variable) %>%
@@ -467,9 +454,6 @@ if (F) {
 }
 ```
 
-
-## Kepler
-
 ```{r}
 # filter by the kepler
 exoplanets %>% 
@@ -482,12 +466,6 @@ exoplanets %>%
 exoplanets %>% 
   filter(detection_type == "Other")
 ```
-
-```{r}
-exoplanets_rd %>% 
-  select(name, star_distance, star_name)
-```
-
 
 ```{r}
 conflicts_prefer(lubridate::yday)
@@ -516,7 +494,7 @@ exoplanets_rddk %>%
 
 ```{r}
 exoplanets %>%
-  filter(publication %>% is_na)
+  tabyl(publication)
 ```
 
 
@@ -540,9 +518,6 @@ shadow_exoplanets <- exoplanets_rddk %>%
 # TODO reduce dimensionality on the _NA 
 shadow_exoplanets
 ```
-
-# clustering
-TODO
 
 # model
 
