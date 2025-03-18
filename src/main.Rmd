@@ -2,6 +2,8 @@
 title: "R Notebook"
 output: html_notebook
 ---
+Sry about the mess, this was mostly exploration
+
 
 ```{r}
 library(here)
@@ -18,6 +20,12 @@ exoplanets
 library(skimr)
 skim(exoplanets)
 ```
+
+```{r}
+library(tidymodels)
+glimpse(exoplanets)
+```
+
 
 
 ```{r,fig.asp=2}
@@ -354,7 +362,7 @@ exoplanets %>%
 # remove any column with error in the name
 exoplanets_r <- exoplanets %>% 
   select(-contains("error")) %>% 
-  select(-planet_status, -updated, -alternate_names, -publication) %>% # useless
+  select(-planet_status, -publication) %>% # useless
   select(-hot_point_lon, ) # too many missings
 exoplanets_r %>% names
 ```
@@ -379,12 +387,22 @@ exoplanets %>%
 ```{r}
 library(fastDummies)
 exoplanets_rd <- exoplanets_r %>% 
-  dummy_cols(select_columns = "detection_type", split = ", ") %>% 
-  # make them bools
-  mutate_at(vars(starts_with("detection_type_")), as.logical)
+  dummy_cols(select_columns = "detection_type", split = ", ")
 exoplanets_rd %>% select(starts_with("detection_type")) %>% 
   unique
 ```
+
+
+```{r}
+exoplanets_rd %>% 
+  select(starts_with("detection_type")) %>% 
+  gather(key="detection_type", value="value") %>% 
+  filter(value == 1) %>% 
+  group_by(detection_type) %>% 
+  summarise(n = n(), percentage = n()*100 / nrow(exoplanets_rd)) %>% 
+  arrange(-n)
+```
+
 
 ```{r, fig.width=10, fig.height=20}
 library(naniar)
@@ -399,12 +417,63 @@ exoplanets_rd %>%
 ```
 
 
+```{r}
+if (F){
+library(misty)
+exoplanets_rd %>% 
+  select(tzero_vr, tzero_tr_sec, tzero_tr) %>% 
+  na.test(data = exoplanets_rd)
+} # didnt work for some reason
+```
+
+
+```{r}
+library(shiny)
+library(dplyr)
+library(plotly)
+library(naniar)  # Assuming miss_var_summary() is from naniar
+
+# Sample UI
+ui <- fluidPage(
+  titlePanel("Missing Data by Detection Type"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("group_var", "Select Detection Type:", 
+                  choices = names(exoplanets_rd)[grepl("^detection_type_", names(exoplanets_rd))])
+    ),
+    
+    mainPanel(
+      plotlyOutput("missing_plot", height = "700px")  # Increased height
+    )
+  )
+)
+
+# Server function
+server <- function(input, output) {
+  output$missing_plot <- renderPlotly({
+    exoplanets_rd %>%
+      group_by(.data[[input$group_var]]) %>%
+      miss_var_summary() %>%
+      arrange(variable) %>%
+      filter(!str_detect(variable, "detection_type")) %>%
+      plot_ly(y = ~variable, x = ~pct_miss, color = ~.data[[input$group_var]], type = "bar") %>%
+      layout(barmode = "group", height = 700)  # Increased plot height
+  })
+}
+# Run the app
+if (F) {
+  shinyApp(ui = ui, server = server)
+}
+```
+
+
 ## Kepler
 
 ```{r}
 # filter by the kepler
 exoplanets %>% 
-  filter(name %>% str_like("%Kepler%")) %>% 
+  filter(paste(name, alternate_names) %>% str_like("%Kepler%")) %>% 
   tabyl("detection_type")
 ```
 
@@ -414,8 +483,218 @@ exoplanets %>%
   filter(detection_type == "Other")
 ```
 
+```{r}
+exoplanets_rd %>% 
+  select(name, star_distance, star_name)
+```
+
 
 ```{r}
+conflicts_prefer(lubridate::yday)
+conflicts_prefer(lubridate::year)
+year_with_percentage <- function(date) {
+  percentage_of_year <- yday(date) / ifelse(leap_year(date), 366, 365)
+  year(date) + percentage_of_year
+}
 
+exoplanets_rd %>% 
+  mutate(updated = updated %>% year_with_percentage) %>% 
+  mutate(diff_disc_updated = updated - discovered) -> exoplanets_rdd
+exoplanets_rdd %>% 
+  select(discovered, updated, diff_disc_updated)
+```
+
+```{r}
+exoplanets_rddk <- exoplanets_rdd %>% 
+  mutate(is_kepler = paste(name, alternate_names) %>% str_detect("kepler" %>% regex(ignore_case = T)))
+exoplanets_rddk %>%
+  select(name, is_kepler) %>% 
+  arrange(-is_kepler)
+```
+
+
+
+```{r}
+exoplanets %>%
+  filter(publication %>% is_na)
+```
+
+
+# Modeling
+
+```{r}
+# transform into is shadow matrix
+library(naniar)
+exoplanets_rddk %>% 
+  select(-name, -discovered, -updated, -diff_disc_updated, -is_kepler, -star_distance, -starts_with("detection_type")) %>%
+  janitor::remove_constant() %>%
+  as_shadow() -> shadow_matrix
+# add columns to exoplanets_rd
+shadow_exoplanets <- exoplanets_rddk %>% 
+  bind_cols(shadow_matrix) %>% 
+  # select everyone that ends with _NA
+  select(name, starts_with("detection_type_"), discovered, updated, diff_disc_updated, is_kepler, star_distance, ra, dec, ends_with("_NA")) %>% 
+  # change detection_type to factor
+  mutate_at(vars(starts_with("detection_type_")), as.factor) %>% 
+  janitor::clean_names()
+# TODO reduce dimensionality on the _NA 
+shadow_exoplanets
+```
+
+# clustering
+TODO
+
+# model
+
+```{r}
+shadow_exoplanets %>% glimpse
+```
+
+
+```{r}
+library(rpart)
+library(dplyr)
+library(purrr)
+
+set.seed(123)
+
+# Define target and predictor columns
+target_cols <- names(shadow_exoplanets) %>% 
+  keep(~ startsWith(.x, "detection_type_"))
+
+predictor_cols <- names(shadow_exoplanets) %>% 
+  setdiff(c("name", target_cols))
+
+# Train decision trees for each target label
+models <- target_cols %>%
+  set_names() %>%
+  map(~ rpart(as.formula(paste(.x, "~", paste(predictor_cols, collapse = " + "))),
+              data = shadow_exoplanets, method = "class"))
+
+# Make predictions and add them to the original dataset
+shadow_exoplanets_with_preds <- shadow_exoplanets %>%
+  bind_cols(models %>%
+    map_dfc(~ predict(.x, shadow_exoplanets, type = "class")) %>%
+    rename_with(~ paste0("pred_", target_cols))  # Prefix predictions for clarity
+  )
+
+predictions <- shadow_exoplanets_with_preds %>%
+  mutate(
+    actual_combined = apply(select(., all_of(target_cols)), 1, paste, collapse = "_"),
+    predicted_combined = apply(select(., starts_with("pred_")), 1, paste, collapse = "_")
+  ) %>% select(actual_combined, predicted_combined, starts_with("pred_"), starts_with("detection_type_"))
+predictions
+```
+
+```{r}
+multi_label_confusion_matrix <- function(y_true, y_pred) {
+  result <- list()
+  
+  for (col in names(y_true)) {
+    confusion_matrix <- table(y_true[[col]], y_pred[[paste0("pred_", col)]])
+    result[[col]] <- confusion_matrix
+  }
+  
+  return(result)
+}
+multi_label_confusion_matrix(shadow_exoplanets_with_preds %>% select(starts_with("detection_type_")), predictions %>% select(starts_with("pred_")))
+```
+
+```{r}
+# Load necessary library
+library(rpart.plot)
+
+# Plot the decision trees with titles
+target_cols %>%
+  map2(models, ~ {
+    rpart.plot(.y, 
+               type = 4, 
+               extra = 101, 
+               under = TRUE, 
+               fallen.leaves = TRUE,
+               main = paste("Decision Tree for", .x))  # Title with the target label
+  })
+
+```
+
+```{r}
+# get accuracy
+accuracy <- function(y_true, y_pred) {
+  result <- list()
+  
+  for (col in names(y_true)) {
+    confusion_matrix <- table(y_true[[col]], y_pred[[paste0("pred_", col)]])
+    result[[col]] <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+  }
+  
+  return(result)
+}
+
+accuracy(shadow_exoplanets_with_preds %>% select(starts_with("detection_type_")), predictions %>% select(starts_with("pred_")))
+```
+
+```{r}
+set.seed(123)
+
+shadow_exoplanets %>% 
+  select(-name, -starts_with("detection_type"), -ends_with("_na"), -discovered, -updated, -diff_disc_updated, -is_kepler) %>% 
+  as_shadow() %>% 
+  bind_cols(shadow_exoplanets) %>% 
+  select(-discovered, -updated, -diff_disc_updated, -is_kepler, -star_distance, -ra, -dec) %>%
+  relocate(name, starts_with("detection_type")) -> shadower_exoplanets
+
+shadower_exoplanets %>% glimpse
+```
+
+
+```{r}
+# Do the same thing with shadower_exoplanets
+
+
+# Define target and predictor columns
+target_cols <- names(shadower_exoplanets) %>% 
+  keep(~ startsWith(.x, "detection_type_"))
+
+predictor_cols <- names(shadower_exoplanets) %>%
+  setdiff(c("name", target_cols))
+
+# Train decision trees for each target label
+models <- target_cols %>%
+  set_names() %>%
+  map(~ rpart(as.formula(paste(.x, "~", paste(predictor_cols, collapse = " + "))),
+              data = shadower_exoplanets, method = "class"))
+
+# Make predictions and add them to the original dataset
+shadower_exoplanets_with_preds <- shadower_exoplanets %>%
+  bind_cols(models %>%
+    map_dfc(~ predict(.x, shadower_exoplanets, type = "class")) %>%
+    rename_with(~ paste0("pred_", target_cols))  # Prefix predictions for clarity
+  )
+
+predictions <- shadower_exoplanets_with_preds %>%
+  mutate(
+    actual_combined = apply(select(., all_of(target_cols)), 1, paste, collapse = "_"),
+    predicted_combined = apply(select(., starts_with("pred_")), 1, paste, collapse = "_")
+  ) %>% select(actual_combined, predicted_combined, starts_with("pred_"), starts_with("detection_type_"))
+predictions
+```
+
+
+```{r}
+# accuracy
+accuracy(shadower_exoplanets_with_preds %>% select(starts_with("detection_type_")), predictions %>% select(starts_with("pred_")))
+```
+
+```{r}
+# plot
+target_cols %>%
+  map2(models, ~ {
+    rpart.plot(.y, 
+               type = 4, 
+               extra = 101, 
+               under = TRUE, 
+               fallen.leaves = TRUE,
+               main = paste("Decision Tree for", .x))  # Title with the target label
+  })
 ```
 

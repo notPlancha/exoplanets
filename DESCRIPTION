@@ -1,16 +1,23 @@
 Package: app
 Imports:
+    caret,
     data.table,
     easystats,
     fastDummies,
     here,
+    icecream,
     janitor,
     jetpack,
     mapproj,
+    misty,
     naniar,
     plotly,
     rgl,
     rmarkdown,
+    rpart,
+    rpart.plot,
+    shiny,
     skimr,
+    tidymodels,
     tidyverse,
     visdat
